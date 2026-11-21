@@ -1,3 +1,4 @@
+
 name: Build APK
 
 on:
@@ -29,64 +30,48 @@ jobs:
       - name: Unpack project
         run: unzip -q ChromaticSketch-source.zip -d project
 
-      - name: Repair project configuration
+      - name: Fix project configuration
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           p = Path("project/app/build.gradle")
-
           if not p.exists():
-              raise SystemExit("ERROR: app/build.gradle not found")
+              raise SystemExit("ERROR: project/app/build.gradle not found")
 
           s = p.read_text()
 
           if "sourceCompatibility JavaVersion.VERSION_17" not in s:
-              s = s.replace(
-                  "    buildFeatures { compose true }",
-                  """    compileOptions {
-                      sourceCompatibility JavaVersion.VERSION_17
-                      targetCompatibility JavaVersion.VERSION_17
-                  }
-                  kotlinOptions {
-                      jvmTarget = "17"
-                  }
-                  buildFeatures { compose true }""",
-                  1
-              )
-
-          dependencies = [
-              "implementation 'androidx.compose.runtime:runtime'",
-              "implementation 'androidx.compose.ui:ui-graphics'"
-          ]
-
-          for dep in dependencies:
-              if dep not in s:
-                  s = s.replace(
-                      "dependencies {",
-                      "dependencies {\n    " + dep,
-                      1
-                  )
-
-          if "tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile)" not in s:
-              s += """
-
-          tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+              s = s.replace("android {", """android {
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
               kotlinOptions {
                   jvmTarget = "17"
-              }
-          }
-          """
+              }""", 1)
+
+          for dep in [
+              "implementation 'androidx.compose.runtime:runtime'",
+              "implementation 'androidx.compose.ui:ui-graphics'",
+              "implementation 'androidx.compose.ui:ui-unit'"
+          ]:
+              if dep not in s:
+                  s = s.replace("dependencies {", "dependencies {\n    " + dep, 1)
 
           p.write_text(s)
 
           check = p.read_text()
-          assert "sourceCompatibility JavaVersion.VERSION_17" in check
-          assert "jvmTarget = " + '"17"' in check
-          assert "androidx.compose.runtime:runtime" in check
+          for required in [
+              "sourceCompatibility JavaVersion.VERSION_17",
+              "targetCompatibility JavaVersion.VERSION_17",
+              'jvmTarget = "17"',
+              "androidx.compose.runtime:runtime"
+          ]:
+              if required not in check:
+                  raise SystemExit("Missing setting: " + required)
 
-          print("Configuration verified:")
-          print(check)
+          print("Project configuration successfully checked")
           PY
 
       - name: Build APK
