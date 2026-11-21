@@ -1,4 +1,3 @@
-
 name: Build APK
 
 on:
@@ -28,51 +27,66 @@ jobs:
           gradle-version: '8.9'
 
       - name: Unpack project
-        run: unzip ChromaticSketch-source.zip -d project
+        run: unzip -q ChromaticSketch-source.zip -d project
 
-      - name: Fix project dependencies and imports
+      - name: Repair project configuration
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          gradle = Path("project/app/build.gradle")
-          s = gradle.read_text()
+          p = Path("project/app/build.gradle")
 
-          s += """
-          
-          dependencies {
-              implementation platform('androidx.compose:compose-bom:2024.12.01')
-              implementation 'androidx.compose.ui:ui'
-              implementation 'androidx.compose.ui:ui-graphics'
-              implementation 'androidx.compose.foundation:foundation'
-              implementation 'androidx.compose.runtime:runtime'
-              implementation 'androidx.compose.material3:material3'
-              implementation 'androidx.compose.ui:ui-tooling-preview'
-              implementation 'androidx.activity:activity-compose:1.10.0'
+          if not p.exists():
+              raise SystemExit("ERROR: app/build.gradle not found")
+
+          s = p.read_text()
+
+          if "sourceCompatibility JavaVersion.VERSION_17" not in s:
+              s = s.replace(
+                  "    buildFeatures { compose true }",
+                  """    compileOptions {
+                      sourceCompatibility JavaVersion.VERSION_17
+                      targetCompatibility JavaVersion.VERSION_17
+                  }
+                  kotlinOptions {
+                      jvmTarget = "17"
+                  }
+                  buildFeatures { compose true }""",
+                  1
+              )
+
+          dependencies = [
+              "implementation 'androidx.compose.runtime:runtime'",
+              "implementation 'androidx.compose.ui:ui-graphics'"
+          ]
+
+          for dep in dependencies:
+              if dep not in s:
+                  s = s.replace(
+                      "dependencies {",
+                      "dependencies {\n    " + dep,
+                      1
+                  )
+
+          if "tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile)" not in s:
+              s += """
+
+          tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
           }
           """
-          gradle.write_text(s)
 
-          files = {
-              "project/app/src/main/java/com/chromaticsketch/MainActivity.kt": [
-                  "import androidx.compose.ui.unit.sp"
-              ],
-              "project/app/src/main/java/com/chromaticsketch/SketchEngine.kt": [
-                  "import androidx.compose.ui.geometry.Offset",
-                  "import androidx.compose.ui.graphics.Color"
-              ]
-          }
+          p.write_text(s)
 
-          for filename, imports in files.items():
-              p = Path(filename)
-              s = p.read_text()
-              for item in imports:
-                  if item not in s:
-                      pos = s.find("\n")
-                      s = s[:pos+1] + item + "\n" + s[pos+1:]
-              p.write_text(s)
+          check = p.read_text()
+          assert "sourceCompatibility JavaVersion.VERSION_17" in check
+          assert "jvmTarget = " + '"17"' in check
+          assert "androidx.compose.runtime:runtime" in check
 
-          print("Dependencies and imports updated")
+          print("Configuration verified:")
+          print(check)
           PY
 
       - name: Build APK
