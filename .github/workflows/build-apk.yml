@@ -1,3 +1,4 @@
+
 name: Build APK
 
 on:
@@ -29,29 +30,49 @@ jobs:
       - name: Unpack project
         run: unzip ChromaticSketch-source.zip -d project
 
-      - name: Fix JVM versions
+      - name: Fix project dependencies and imports
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("project/app/build.gradle")
-          s = p.read_text()
+          gradle = Path("project/app/build.gradle")
+          s = gradle.read_text()
 
-          s = s.replace(
-              "android {",
-              """android {
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-          """,
-              1
-          )
+          s += """
+          
+          dependencies {
+              implementation platform('androidx.compose:compose-bom:2024.12.01')
+              implementation 'androidx.compose.ui:ui'
+              implementation 'androidx.compose.ui:ui-graphics'
+              implementation 'androidx.compose.foundation:foundation'
+              implementation 'androidx.compose.runtime:runtime'
+              implementation 'androidx.compose.material3:material3'
+              implementation 'androidx.compose.ui:ui-tooling-preview'
+              implementation 'androidx.activity:activity-compose:1.10.0'
+          }
+          """
+          gradle.write_text(s)
 
-          p.write_text(s)
+          files = {
+              "project/app/src/main/java/com/chromaticsketch/MainActivity.kt": [
+                  "import androidx.compose.ui.unit.sp"
+              ],
+              "project/app/src/main/java/com/chromaticsketch/SketchEngine.kt": [
+                  "import androidx.compose.ui.geometry.Offset",
+                  "import androidx.compose.ui.graphics.Color"
+              ]
+          }
+
+          for filename, imports in files.items():
+              p = Path(filename)
+              s = p.read_text()
+              for item in imports:
+                  if item not in s:
+                      pos = s.find("\n")
+                      s = s[:pos+1] + item + "\n" + s[pos+1:]
+              p.write_text(s)
+
+          print("Dependencies and imports updated")
           PY
 
       - name: Build APK
